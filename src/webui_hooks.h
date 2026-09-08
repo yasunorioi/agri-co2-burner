@@ -156,10 +156,8 @@ inline String renderConfigRows() {
   num("Duty max (%)", "d_max", g_cfg.duty_pct_max);
   num("Duty window (s)", "d_win", g_cfg.duty_window_s);
 
-  sec("WiFi (reboot to apply)");
-  txt("SSID", "wifi_ss", g_cfg.wifi_ssid);
-  s += F("<tr><th>Passphrase</th><td><input type=password name=wifi_pw value='");
-  s += g_cfg.wifi_pass; s += F("'></td></tr>");
+  // WiFi credentials are owned by WiFiManager (join agri-co2-setup / hold the
+  // button at boot to re-provision), not this form.
 
   return s;
 }
@@ -200,8 +198,6 @@ inline void applyConfigRows(const String &b) {
   g_cfg.duty_pct_max    = (uint8_t) agri::parseFormInt(b, "d_max",  g_cfg.duty_pct_max);
   g_cfg.duty_window_s   = (uint16_t)agri::parseFormInt(b, "d_win",  g_cfg.duty_window_s);
 
-  agri::parseFormStr(b, "wifi_ss", g_cfg.wifi_ssid, sizeof(g_cfg.wifi_ssid));
-  agri::parseFormStr(b, "wifi_pw", g_cfg.wifi_pass, sizeof(g_cfg.wifi_pass));
 }
 
 // ---- /api/status augmentation ----------------------------------------------

@@ -49,19 +49,32 @@ LED  = G27 (WS2812)   Button = G39 (cycle AUTO / FORCE OFF / FORCE ON)
 Spare: PORT.A I2C G26/G32, RS485 — for a future local sensor (fully-offline dosing)
 ```
 
-LED: blue boot · red no-WiFi · magenta AP-provisioning · yellow no-MQTT ·
-green OK · **orange = relay ON (burner enabled)** · white publish-flash.
+LED: blue boot / portal · red no-WiFi · yellow no-MQTT · green OK ·
+**orange = relay ON (burner enabled)** · white publish-flash.
 
-## First run
+## First run — WiFi provisioning
+
+WiFi credentials are handled by [WiFiManager](https://github.com/tzapu/WiFiManager);
+the MQTT host / port / prefix ride along as custom fields so one portal visit
+configures everything.
 
 1. Flash over USB-C (`pio run -t upload`).
-2. No WiFi creds yet → node starts SoftAP **`agri-co2-setup`** with a catch-all
-   DNS + captive-portal redirect. Join it from a phone and the sign-in browser
-   should pop straight to the config page (or open `http://192.168.4.1/config`
-   manually). Set SSID/passphrase + MQTT host + source prefix, Save, and reboot.
-   (Captive redirect needs `agri-node-poe-core` with the `WebUI::captive` flag.)
-3. Thereafter it joins your WiFi as `agri-co2-01.local`; tune setpoints /
-   schedule / window gate on `/config`. Later flashes via ArduinoOTA or `/ota`.
+2. No WiFi saved → the node starts an open AP **`agri-co2-setup`** and its
+   captive portal. Join it from a phone; the portal opens automatically.
+   **Configure WiFi** → pick your SSID from the scan + enter the passphrase,
+   and fill the custom fields (**MQTT host** IP, **MQTT port** `1883`,
+   **MQTT prefix** e.g. `agriha/3`). Save.
+3. The node connects, persists the MQTT fields to NVS (prefix is also copied to
+   `src_prefix`), and joins your WiFi as `agri-co2-01.local`. Tune setpoints /
+   schedule / window gate — and set/change the MQTT host later — on `/config`.
+   Later flashes via ArduinoOTA or `/ota`.
+4. **Re-provision**: hold the button (G39) while powering on to force the
+   portal back up. WiFiManager's portal has a 300 s timeout so a temporarily
+   unreachable AP never blocks the controller — it runs offline (relay held
+   OFF by fail-safe) and `loop()` keeps retrying WiFi.
+
+> Note: core's `WebUI::captive` flag (added for the earlier hand-rolled AP) is
+> no longer used here — WiFiManager owns provisioning — but is harmless.
 
 ## ⚠ Confirm before trusting in production
 
@@ -95,9 +108,11 @@ restart never powers the burner on.
   (`Console()`). Read the port directly instead, e.g. pyserial with
   `dtr=False; rts=False` to monitor *without* resetting the board (pulse RTS
   once if you want to capture a fresh boot).
-- **Verified on device**: boots into SoftAP `agri-co2-setup` (captive → /config)
-  as `agri-co2-01.local`; with no CO2 data the control loop holds the relay
-  `OFF` (`CO2 stale → fail-safe OFF`).
+- **Verified on device**: WiFiManager portal → joined WiFi as
+  `agri-co2-01.local`, reachable over HTTP; `/api/status` shows `wifi_ip` +
+  RSSI, and with no CO2 data / no MQTT host the control loop holds the relay
+  `OFF` (`CO2 stale → fail-safe OFF`). (`ip: 0.0.0.0` in status is cosmetic —
+  core reads `ETH.localIP()`; the real address is `wifi_ip`.)
 
 ## License
 

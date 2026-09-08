@@ -11,7 +11,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <DNSServer.h>
+#include <WiFiManager.h>
 #include <time.h>
 #include <FastLED.h>
 #include <AgriNode.h>
@@ -46,38 +46,53 @@ uint32_t    g_duty_win_start_ms = 0;
 uint32_t    g_duty_on_ms        = 0;
 uint32_t    g_duty_last_ms      = 0;
 
-static bool g_ap_mode = false;
-static DNSServer g_dns;   // catch-all DNS while in provisioning AP mode
+static bool g_wm_should_save = false;   // set by WiFiManager save callback
 
 // ---- WiFi bring-up ---------------------------------------------------------
 static bool netConnected() { return WiFi.status() == WL_CONNECTED; }
 
+// WiFiManager owns the WiFi credentials + provisioning portal. We piggy-back
+// the MQTT host/port/prefix as custom fields so one portal visit configures
+// everything. On a normal boot (creds saved) the portal never shows and we
+// keep whatever MQTT config is already in NVS. Autonomy: the portal has a
+// timeout so a temporarily-unreachable AP never blocks the controller forever;
+// after that loop() keeps retrying WiFi while the control loop runs (fail-safe
+// OFF while offline). Hold the button (G39) at boot to force re-provisioning.
 static void wifiBegin() {
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.setHostname(g_cfg.common.hostname);
-  if (g_cfg.wifi_ssid[0]) {
-    Serial.printf("[WiFi] STA connecting to '%s'\n", g_cfg.wifi_ssid);
-    WiFi.begin(g_cfg.wifi_ssid, g_cfg.wifi_pass);
-    uint32_t t0 = millis();
-    while (!netConnected() && millis() - t0 < 20000) { delay(200); }
+  WiFiManager wm;
+  wm.setHostname(g_cfg.common.hostname);
+  wm.setConfigPortalTimeout(300);
+  wm.setSaveConfigCallback([](){ g_wm_should_save = true; });
+
+  char portStr[8];
+  snprintf(portStr, sizeof(portStr), "%u", g_cfg.common.mqtt_port);
+  WiFiManagerParameter p_host("mhost", "MQTT host (IP)", g_cfg.common.mqtt_host, 63);
+  WiFiManagerParameter p_port("mport", "MQTT port", portStr, 7);
+  WiFiManagerParameter p_pfx ("mpfx",  "MQTT prefix (e.g. agriha/3)",
+                              g_cfg.common.mqtt_topic_prefix, 63);
+  wm.addParameter(&p_host);
+  wm.addParameter(&p_port);
+  wm.addParameter(&p_pfx);
+
+  bool force = (digitalRead(39) == LOW);   // button held at boot
+  bool ok = force ? wm.startConfigPortal("agri-co2-setup")
+                  : wm.autoConnect("agri-co2-setup");
+
+  if (g_wm_should_save) {
+    strlcpy(g_cfg.common.mqtt_host, p_host.getValue(), sizeof(g_cfg.common.mqtt_host));
+    int port = atoi(p_port.getValue());
+    if (port > 0 && port < 65536) g_cfg.common.mqtt_port = (uint16_t)port;
+    strlcpy(g_cfg.common.mqtt_topic_prefix, p_pfx.getValue(),
+            sizeof(g_cfg.common.mqtt_topic_prefix));
+    strlcpy(g_cfg.src_prefix, p_pfx.getValue(), sizeof(g_cfg.src_prefix));
+    saveConfig();
+    Serial.printf("[WM] saved MQTT host=%s port=%u prefix=%s\n",
+                  g_cfg.common.mqtt_host, g_cfg.common.mqtt_port,
+                  g_cfg.common.mqtt_topic_prefix);
   }
-  if (netConnected()) {
-    Serial.printf("[WiFi] STA up, IP %s\n", WiFi.localIP().toString().c_str());
-    g_ap_mode = false;
-  } else {
-    // Provisioning fallback: open AP so /config can set SSID/pass, then reboot.
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("agri-co2-setup");
-    g_ap_mode = true;
-    // Catch-all DNS (every hostname → AP) + captive redirect in the WebUI so a
-    // phone's captive-detection probe pops the sign-in browser onto /config.
-    g_dns.setErrorReplyCode(DNSReplyCode::NoError);
-    g_dns.start(53, "*", WiFi.softAPIP());
-    agri::WebUI::captive = true;
-    Serial.printf("[WiFi] STA failed → SoftAP 'agri-co2-setup' at %s (captive)\n",
-                  WiFi.softAPIP().toString().c_str());
-  }
+
+  if (ok) Serial.printf("[WiFi] connected, IP %s\n", WiFi.localIP().toString().c_str());
+  else    Serial.println("[WiFi] not connected (portal timeout) — running offline, will retry");
 }
 
 // ---- own-state publish -----------------------------------------------------
@@ -142,7 +157,7 @@ void setup() {
   agri::OTA::begin(FW_REPO, FW_BIN_NAME, FW_VERSION);
   if (netConnected()) agri::OTA::checkLatest();
 
-  Serial.printf("[BOOT] ready (%s)\n", g_ap_mode ? "AP provisioning" : "STA");
+  Serial.println("[BOOT] ready");
 }
 
 void loop() {
@@ -150,19 +165,18 @@ void loop() {
 
   agri::otaHandle();
   agri::OTA::poll();
-  if (g_ap_mode) g_dns.processNextRequest();
   agri::WebUI::handle(netConnected(), netConnected());
   buttonPoll();
 
-  // STA retry if we dropped (skip while in provisioning AP mode)
-  if (!g_ap_mode && !netConnected()) {
+  // STA retry if we dropped (WiFiManager saved the creds in esp_wifi NVS)
+  if (!netConnected()) {
     static uint32_t lastTry = 0;
     if (now - lastTry > 10000) { lastTry = now; WiFi.reconnect(); }
   }
 
   // MQTT connect + subscribe-on-(re)connect
   static bool wasConnected = false;
-  if (!g_ap_mode && netConnected() && agri::MQTT::hasHost(g_cfg.common)) {
+  if (netConnected() && agri::MQTT::hasHost(g_cfg.common)) {
     if (!agri::MQTT::connected()) {
       wasConnected = false;
       static uint32_t lastTry = 0;
@@ -174,11 +188,11 @@ void loop() {
   }
 
   // CCM fallback receive (drain any pending packets)
-  if (!g_ap_mode && g_cfg.common.ccm_enabled) sourcesCcmPoll();
+  if (g_cfg.common.ccm_enabled && netConnected()) sourcesCcmPoll();
 
   // window position poll
   static uint32_t lastWin = 0;
-  if (!g_ap_mode && netConnected() &&
+  if (netConnected() &&
       now - lastWin >= (uint32_t)g_cfg.win_poll_s * 1000UL) {
     lastWin = now;
     sourcesWinPoll();
@@ -201,8 +215,7 @@ void loop() {
 
   // LED: net/mqtt state, repainted each loop; ON overrides to burner-orange.
   agri::LedState desired;
-  if (g_ap_mode)                                                         desired = agri::LED_NO_SENSOR;
-  else if (!netConnected())                                              desired = agri::LED_NO_LINK;
+  if (!netConnected())                                                   desired = agri::LED_NO_LINK;
   else if (agri::MQTT::hasHost(g_cfg.common) && !agri::MQTT::connected()) desired = agri::LED_NO_MQTT;
   else                                                                   desired = agri::LED_OK;
   agri::Led::set(desired);
