@@ -81,6 +81,24 @@ All tunables are on the web `/config` page and persisted in NVS (namespace
 `co2brn`). `FORCE ON` is downgraded to `AUTO` on reboot so an unattended
 restart never powers the burner on.
 
+## Flashing & serial notes
+
+- **USB-serial chip**: this AtomHub Switch enumerates as an **FTDI FT232**
+  (`0403:6001`), *not* the CH9102F of a bare ATOM Lite. Its programming path is
+  wired for auto reset (EN/IO0 via DTR/RTS), so `pio run -t upload` flashes and
+  hard-resets normally. `upload_speed = 115200` works as-is.
+- **First boot after flash** showed a single `TG1WDT_SYS_RESET` between the
+  banner and setup completing, then booted clean and stayed up — consistent
+  with radio-init inrush on a marginal supply. Power it from a supply with
+  headroom; if the WDT reset recurs at the final install, suspect brownout.
+- **Headless serial**: `pio device monitor` crashes without a TTY
+  (`Console()`). Read the port directly instead, e.g. pyserial with
+  `dtr=False; rts=False` to monitor *without* resetting the board (pulse RTS
+  once if you want to capture a fresh boot).
+- **Verified on device**: boots into SoftAP `agri-co2-setup` (captive → /config)
+  as `agri-co2-01.local`; with no CO2 data the control loop holds the relay
+  `OFF` (`CO2 stale → fail-safe OFF`).
+
 ## License
 
 0BSD — copy and adapt freely.
