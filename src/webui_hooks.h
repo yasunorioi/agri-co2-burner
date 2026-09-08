@@ -30,6 +30,17 @@ inline String hmm(uint16_t minutes) {
   return String(b);
 }
 
+// Parse an <input type=time> value ("HH:MM", ':' arrives url-decoded) into
+// minutes-from-midnight; return defMin on empty/invalid input.
+inline int parseHHMM(const String &v, int defMin) {
+  int c = v.indexOf(':');
+  if (c < 0) return defMin;
+  int hh = v.substring(0, c).toInt();
+  int mm = v.substring(c + 1).toInt();
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return defMin;
+  return hh * 60 + mm;
+}
+
 // ---- Dashboard -------------------------------------------------------------
 inline String renderDashboard() {
   String s; s.reserve(1400);
@@ -135,10 +146,14 @@ inline String renderConfigRows() {
   num("Temp min (x10 C)", "t_min", g_cfg.temp_min_c10);
   num("Temp max (x10 C)", "t_max", g_cfg.temp_max_c10);
 
-  sec("Schedule (JST minutes-from-midnight)");
+  sec("Schedule (JST)");
   chk("Enable schedule", "sc_en", g_cfg.sched_enabled);
-  num("Start (min)", "sc_beg", g_cfg.sched_start_min);
-  num("End (min)",   "sc_end", g_cfg.sched_end_min);
+  s += "<tr><th>Start</th><td><input type=time name=sc_beg value='"
+     + hmm(g_cfg.sched_start_min) + "'></td></tr>";
+  s += "<tr><th>End</th><td><input type=time name=sc_end value='"
+     + hmm(g_cfg.sched_end_min) + "'></td></tr>";
+  s += F("<tr><td colspan=2 style='color:#888;font-size:85%'>"
+         "開始&gt;終了で日跨ぎ (夜間) 撒布</td></tr>");
 
   sec("Side-window gate (ArSprout poll)");
   chk("Enable window gate", "w_gate", g_cfg.win_gate);
@@ -181,8 +196,11 @@ inline void applyConfigRows(const String &b) {
   g_cfg.temp_max_c10 = (int16_t)agri::parseFormInt(b, "t_max", g_cfg.temp_max_c10);
 
   g_cfg.sched_enabled   = agri::parseFormBool(b, "sc_en");
-  g_cfg.sched_start_min = (uint16_t)agri::parseFormInt(b, "sc_beg", g_cfg.sched_start_min);
-  g_cfg.sched_end_min   = (uint16_t)agri::parseFormInt(b, "sc_end", g_cfg.sched_end_min);
+  char tb[8];
+  tb[0] = 0; agri::parseFormStr(b, "sc_beg", tb, sizeof(tb));
+  g_cfg.sched_start_min = (uint16_t)parseHHMM(String(tb), g_cfg.sched_start_min);
+  tb[0] = 0; agri::parseFormStr(b, "sc_end", tb, sizeof(tb));
+  g_cfg.sched_end_min   = (uint16_t)parseHHMM(String(tb), g_cfg.sched_end_min);
 
   g_cfg.win_gate = agri::parseFormBool(b, "w_gate");
   agri::parseFormStr(b, "w_host", g_cfg.arsprout_host, sizeof(g_cfg.arsprout_host));
