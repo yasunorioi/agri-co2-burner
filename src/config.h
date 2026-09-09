@@ -124,7 +124,13 @@ inline void setDefaults() {
 
   g_cfg.win_gate = true;
   strlcpy(g_cfg.arsprout_host, "192.168.1.81", sizeof(g_cfg.arsprout_host));
-  g_cfg.win_id1       = 64;        // h3 東窓 (agri-arsprout-window)
+  // ArSprout component ids for the side windows, all served by .81. Verified
+  // against GET /api/component (CcmRegion/CcmOrder ↔ id), because pointing a
+  // node at the wrong house's windows is silent — the gate still reads fresh:
+  //   region 71 order 1,2 → id 32 側窓東2 / 33 側窓西2   (house2)
+  //   region 72 order 1,2 → id 64 側窓東3 / 65 側窓西3   (house3)
+  // (house1's windows are region 61 on .71, the older ArSprout, not here.)
+  g_cfg.win_id1       = 64;        // h3 東窓 — defaults target house3
   g_cfg.win_id2       = 65;        // h3 西窓
   g_cfg.win_open_pct  = 5;         // >5% 開 = 撒かない
   g_cfg.win_poll_s    = 30;

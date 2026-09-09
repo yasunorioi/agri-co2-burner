@@ -35,10 +35,35 @@ the burner.
 
 | Input | Source | Notes |
 |---|---|---|
-| CO₂ (primary) | MQTT `<src_prefix>/sensor/InAirCO2` | agriha `{value,unit,ts}` (e.g. from [`agri-env-poe`](https://github.com/yasunorioi/agri-env-poe) SCD41) |
+| CO₂ (primary) | MQTT `<src_prefix>/<src_category>/InAirCO2` | agriha `{value,unit,ts}` (e.g. from [`agri-env-poe`](https://github.com/yasunorioi/agri-env-poe) SCD41) |
 | CO₂ (fallback) | UECS-CCM UDP :16520 `InAirCO2.cMC` | e.g. ArSprout's own broadcast; enable with core's `CCM enabled` |
-| Temp (optional gate) | MQTT `<src_prefix>/sensor/InAirTemp` | dose only within `[min,max]` when enabled |
-| Side window | ArSprout `GET /api/component/<id>` → `{value,mode}` | **read-only** status endpoint (not `operate`); ids 64/65 = h3 東/西 |
+| Temp (optional gate) | MQTT `<src_prefix>/<src_category>/InAirTemp` | dose only within `[min,max]` when enabled |
+| Side window | ArSprout `GET /api/component/<id>` → `{value,mode}` | **read-only** status endpoint (not `operate`) |
+
+### `src_category` — なぜ `sensor` 固定ではないのか
+
+購読先は `<src_prefix>/<src_category>/<type>`。ハウスによって値の出口が違う。
+
+| | 使う category | 実際の出所 |
+|---|---|---|
+| native な agriha ノードがある | `sensor` | ノードが直接 publish |
+| ArSprout/UECS ノードしかない | `sensor_ccm` | CCM ブリッジが変換して publish |
+
+house2 は後者で、CO₂ は `agriha/2/sensor_ccm/InAirCO2` にしか出てこない。
+v0.1.0 は `sensor` 固定だったため **house2 のノードは購読先が存在せず永久に stale** だった。
+
+### 側窓の component id
+
+**別ハウスの窓を指しても症状が出ない**（ゲートは fresh のまま値だけ間違う）ので、
+`GET /api/component` の `CcmRegion`/`CcmOrder` と突き合わせて確認すること。
+すべて `.81` が持つ:
+
+| CCM | id | 名称 | ハウス |
+|---|---|---|---|
+| region 71 order 1 / 2 | **32 / 33** | 側窓東2 / 側窓西2 | house2 |
+| region 72 order 1 / 2 | **64 / 65** | 側窓東3 / 側窓西3 | house3 |
+
+house1 の窓は region 61 で、`.81` ではなく旧 ArSprout `.71` 側。
 
 ## Wiring
 
