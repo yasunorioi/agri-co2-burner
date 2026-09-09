@@ -22,7 +22,7 @@
 #include "webui_hooks.h"
 
 const char *FW_NAME     = "agri-co2-burner";
-const char *FW_VERSION  = "0.1.0";
+const char *FW_VERSION  = "0.2.0";
 const char *FW_REPO     = "yasunorioi/agri-co2-burner";
 const char *FW_BIN_NAME = "agri-co2-burner.bin";
 
@@ -149,7 +149,10 @@ void setup() {
   hooks.renderConfigSensorRows = renderConfigRows;
   hooks.applyConfigSensorForm  = applyConfigRows;
   hooks.addStatusFields        = addStatusFields;
-  hooks.saveConfig             = [](){ saveConfig(); };
+  // Persist, then re-point the MQTT subscription: the source prefix/category/
+  // type fields are on this form, and a changed topic must take effect now
+  // rather than at the next reboot.
+  hooks.saveConfig             = [](){ saveConfig(); sourcesRetarget(); };
   agri::WebUI::begin(g_cfg.common, hooks, FW_NAME, FW_VERSION);
 
   agri::mdnsBegin(g_cfg.common.hostname);

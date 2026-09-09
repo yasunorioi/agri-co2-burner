@@ -131,6 +131,11 @@ inline String renderConfigRows() {
 
   sec("Data source");
   txt("Source MQTT prefix", "src_pfx", g_cfg.src_prefix);
+  txt("Source category", "src_cat", g_cfg.src_category);
+  s += F("<tr><td colspan=2 style='color:#888;font-size:85%'>"
+         "購読先 = &lt;prefix&gt;/&lt;category&gt;/&lt;type&gt;。"
+         "native な agriha ノードがあるハウスは <code>sensor</code>、"
+         "CCM ブリッジ経由でしか値が来ないハウスは <code>sensor_ccm</code>。</td></tr>");
   txt("CO2 UECS type",  "co2_ty",  g_cfg.co2_type);
   txt("Temp UECS type", "temp_ty", g_cfg.temp_type);
   num("Stale timeout (s)", "src_stl", g_cfg.src_stale_s);
@@ -182,6 +187,7 @@ inline void applyConfigRows(const String &b) {
   g_cfg.mode = (uint8_t)agri::parseFormInt(b, "mode", g_cfg.mode);
 
   agri::parseFormStr(b, "src_pfx", g_cfg.src_prefix, sizeof(g_cfg.src_prefix));
+  agri::parseFormStr(b, "src_cat", g_cfg.src_category, sizeof(g_cfg.src_category));
   agri::parseFormStr(b, "co2_ty",  g_cfg.co2_type,   sizeof(g_cfg.co2_type));
   agri::parseFormStr(b, "temp_ty", g_cfg.temp_type,  sizeof(g_cfg.temp_type));
   g_cfg.src_stale_s     = (uint16_t)agri::parseFormInt(b, "src_stl", g_cfg.src_stale_s);

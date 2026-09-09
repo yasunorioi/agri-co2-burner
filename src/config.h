@@ -33,8 +33,16 @@ struct AppConfig {
   agri::CommonConfig common;
 
   // --- data sources ---------------------------------------------------------
+  // Topic = <src_prefix>/<src_category>/<type>. The category segment is
+  // configurable because a house's readings are not always published under
+  // "sensor": a node that speaks agriha natively lands in <house>/sensor/...,
+  // but a house whose only sensor is an ArSprout/UECS node reaches MQTT solely
+  // through the CCM bridge, which files it under <house>/sensor_ccm/... .
+  // house2 is exactly that case (its CO2 is .80 via the bridge), so hardcoding
+  // "sensor" left agri-co2-02 with no source at all.
   char     src_prefix[64];     // MQTT prefix of the CO2/temp source house
-  char     co2_type[20];       // UECS type; MQTT topic = <src_prefix>/sensor/<co2_type>
+  char     src_category[16];   // "sensor" (native) or "sensor_ccm" (bridged)
+  char     co2_type[20];       // UECS type; topic = <src_prefix>/<src_category>/<co2_type>
   char     temp_type[20];      // UECS type for temperature
   uint16_t src_stale_s;        // reading older than this = stale → fail-safe OFF
 
@@ -96,6 +104,7 @@ inline void setDefaults() {
   g_cfg.common.ccm_enabled = false;   // CCM here = fallback RECEIVE, off by default
 
   strlcpy(g_cfg.src_prefix, "agriha/3", sizeof(g_cfg.src_prefix));
+  strlcpy(g_cfg.src_category, "sensor", sizeof(g_cfg.src_category));
   strlcpy(g_cfg.co2_type,  "InAirCO2",  sizeof(g_cfg.co2_type));
   strlcpy(g_cfg.temp_type, "InAirTemp", sizeof(g_cfg.temp_type));
   g_cfg.src_stale_s = 180;
@@ -144,6 +153,7 @@ inline void loadConfig() {
     strlcpy(dst, v.c_str(), n);
   };
   loadStr("src_pfx",  g_cfg.src_prefix, sizeof(g_cfg.src_prefix));
+  loadStr("src_cat",  g_cfg.src_category, sizeof(g_cfg.src_category));
   loadStr("co2_ty",   g_cfg.co2_type,   sizeof(g_cfg.co2_type));
   loadStr("temp_ty",  g_cfg.temp_type,  sizeof(g_cfg.temp_type));
   g_cfg.src_stale_s     = p.getUShort("src_stl",  g_cfg.src_stale_s);
@@ -192,6 +202,7 @@ inline bool saveConfig() {
   agri::commonSave(g_cfg.common, p);
 
   p.putString("src_pfx", g_cfg.src_prefix);
+  p.putString("src_cat", g_cfg.src_category);
   p.putString("co2_ty",  g_cfg.co2_type);
   p.putString("temp_ty", g_cfg.temp_type);
   p.putUShort("src_stl", g_cfg.src_stale_s);

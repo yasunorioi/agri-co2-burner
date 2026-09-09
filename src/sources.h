@@ -2,8 +2,11 @@
 //
 // Three independent inputs, each with its own freshness stamp so the control
 // loop can fail safe when any goes stale:
-//   1. MQTT  (primary)  — subscribe <src_prefix>/sensor/<co2_type|temp_type>,
-//                         agriha-native {value,unit,ts} payloads.
+//   1. MQTT  (primary)  — subscribe <src_prefix>/<src_category>/<co2_type|
+//                         temp_type>, agriha {value,unit,ts} payloads. The
+//                         category is "sensor" for a house with its own native
+//                         publisher and "sensor_ccm" for one that reaches MQTT
+//                         only via the CCM bridge.
 //   2. CCM   (fallback) — listen on UDP 16520 for <DATA type="<type>.cMC">…,
 //                         which is what ArSprout (and agri-env-poe with CCM
 //                         enabled) broadcast. Only used when common.ccm_enabled.
@@ -100,11 +103,40 @@ inline void sourcesSubscribe() {
   Serial.printf("[SUB] %s / %s\n", co2Topic().c_str(), tempTopic().c_str());
 }
 
+// Category is configurable: "sensor" for a house with a native agriha
+// publisher, "sensor_ccm" for one whose readings only reach MQTT through the
+// CCM bridge. Fall back to "sensor" if an old NVS record has it empty.
+inline void sourcesBuildTopics() {
+  const char *cat = g_cfg.src_category[0] ? g_cfg.src_category : "sensor";
+  co2Topic()  = String(g_cfg.src_prefix) + "/" + cat + "/" + g_cfg.co2_type;
+  tempTopic() = String(g_cfg.src_prefix) + "/" + cat + "/" + g_cfg.temp_type;
+}
+
 inline void sourcesBegin() {
-  co2Topic()  = String(g_cfg.src_prefix) + "/sensor/" + g_cfg.co2_type;
-  tempTopic() = String(g_cfg.src_prefix) + "/sensor/" + g_cfg.temp_type;
+  sourcesBuildTopics();
   agri::MQTT::mqtt.setCallback(onMqttMessage);
   if (g_cfg.common.ccm_enabled) ccmRxSocket().begin(16520);
+}
+
+// Re-point the subscription after the source fields change on /config. Without
+// this the node keeps listening to the old topic until the next reboot, which
+// makes a source change look like it silently did nothing. Values are dropped
+// so a stale reading from the previous source cannot linger and be treated as
+// fresh — the control loop fails safe until the new topic delivers.
+inline void sourcesRetarget() {
+  String oldCo2 = co2Topic(), oldTemp = tempTopic();
+  sourcesBuildTopics();
+  if (oldCo2 == co2Topic() && oldTemp == tempTopic()) return;
+
+  if (agri::MQTT::mqtt.connected()) {
+    if (oldCo2.length())  agri::MQTT::mqtt.unsubscribe(oldCo2.c_str());
+    if (oldTemp.length()) agri::MQTT::mqtt.unsubscribe(oldTemp.c_str());
+    agri::MQTT::mqtt.subscribe(co2Topic().c_str());
+    if (g_cfg.temp_type[0]) agri::MQTT::mqtt.subscribe(tempTopic().c_str());
+  }
+  g_co2_ppm = NAN; g_co2_ms = 0; g_co2_src = "-";
+  g_temp_c  = NAN; g_temp_ms = 0;
+  Serial.printf("[SUB] retarget -> %s / %s\n", co2Topic().c_str(), tempTopic().c_str());
 }
 
 // ---- window position poll (read-only ArSprout status) ----------------------
