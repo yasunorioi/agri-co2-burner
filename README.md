@@ -121,6 +121,9 @@ restart never powers the burner on.
 
 ## Flashing & serial notes
 
+> 🛠 **Cross-platform build (Windows / Linux) & first-time Linux setup (udev):**
+> [agri-node-poe-core/docs/cross-platform-build.md](https://github.com/yasunorioi/agri-node-poe-core/blob/main/docs/cross-platform-build.md)
+
 - **USB-serial chip**: this AtomHub Switch enumerates as an **FTDI FT232**
   (`0403:6001`), *not* the CH9102F of a bare ATOM Lite. Its programming path is
   wired for auto reset (EN/IO0 via DTR/RTS), so `pio run -t upload` flashes and
