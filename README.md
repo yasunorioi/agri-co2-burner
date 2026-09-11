@@ -1,8 +1,10 @@
 # agri-co2-burner
 
-CO₂-dosing controller for a **Shizuoka Seiki CG-1000** kerosene CO₂ generator,
-built on the **M5Stack AtomHub Switch (K042)** — an ATOM Lite (ESP32) with two
-AC 250 V / 10 A relays. Part of the `agri-*` family, reusing
+CO₂-dosing controller for a [**Shizuoka Seiki CG-1000**](https://www.shizuoka-seiki.co.jp/products/agriculture/greenhouse/horticulture/cg-1000/)
+kerosene CO₂ generator, built on the
+[**M5Stack AtomHub Switch (K042)**](https://docs.m5stack.com/en/atom/atomhub_switch)
+— an ATOM Lite (ESP32) with two AC 250 V / 10 A relays. Part of the `agri-*`
+family, reusing
 [`agri-node-poe-core`](https://github.com/yasunorioi/agri-node-poe-core) for
 config / MQTT / WebUI / OTA / LED.
 
@@ -10,6 +12,27 @@ Unlike the PoE sensor nodes, this is a **WiFi** node (the AtomHub Switch is
 AC-DC powered, no W5500) and an **actuator** rather than a sensor. It reads
 CO₂/temperature that *other* nodes publish, decides autonomously, and drives
 the burner.
+
+## Target equipment（対象機器）
+
+**Controller — what this firmware runs on:**
+[M5Stack AtomHub Switch (K042)](https://docs.m5stack.com/en/atom/atomhub_switch)
+— an ATOM Lite (ESP32) carrier with two AC 250 V / 10 A relays and an AC-DC
+step-down, so it is **mains-powered and WiFi** (no PoE / W5500). RELAY1 drives
+the burner; RELAY2 is spare.
+
+**Burner — what this drives:** any CO₂ 施肥器 (dosing / fertilisation unit) that
+exposes a remote **ON/OFF dry contact**. The node simply closes RELAY1 across
+that contact (see [Wiring](#wiring)), so a kerosene/LP-gas generator or a
+solenoid on a bottled-CO₂ line all work the same way. Reference / tested unit:
+[**Shizuoka Seiki CG-1000**](https://www.shizuoka-seiki.co.jp/products/agriculture/greenhouse/horticulture/cg-1000/)
+(kerosene) — the safety guards below encode CG-1000
+spec limits (≤ 1000 ppm, ≤ 50 % duty/h), so **re-check them for a different
+burner**.
+
+**CO₂ sensor — where the reading comes from:** this node carries **no sensor of
+its own**; it consumes a CO₂ value published by another node. See
+**CO₂ sensing topology** under [Inputs](#inputs) for why, and the alternatives.
 
 ## What it does
 
@@ -39,6 +62,27 @@ the burner.
 | CO₂ (fallback) | UECS-CCM UDP :16520 `InAirCO2.cMC` | e.g. ArSprout's own broadcast; enable with core's `CCM enabled` |
 | Temp (optional gate) | MQTT `<src_prefix>/<src_category>/InAirTemp` | dose only within `[min,max]` when enabled |
 | Side window | ArSprout `GET /api/component/<id>` → `{value,mode}` | **read-only** status endpoint (not `operate`) |
+
+### CO₂ sensing topology — why this node reads CO₂ over MQTT
+
+A CO₂ reading can reach the burner three ways; this node is built for the middle one.
+
+1. **Local sensor on the M5Atom (most autonomous).** Hang a CO₂ sensor off
+   PORT.A I2C (G26/G32, Grove) so dosing runs **fully offline**, with no
+   dependency on other nodes or the network. Ideal in principle; not wired in
+   this deployment — the pads are reserved (see [Wiring](#wiring), "future local
+   sensor").
+2. **Shared sensor over MQTT (this deployment).** A good CO₂ sensor (SCD41) is
+   expensive, so a single one lives on
+   [`agri-env-poe`](https://github.com/yasunorioi/agri-env-poe) and its
+   `InAirCO2` reading is shared to every consumer over MQTT. This node
+   *subscribes* rather than carrying its own — cheaper when the house already
+   has an env node. The stale-reading fail-safe (relay → OFF) covers the added
+   network dependency.
+3. **Vendor-bundled sensor (common off-the-shelf pattern).** Commercial CO₂
+   施肥器 are often sold as a **set** with their own CO₂ sensor/controller, so
+   many growers never separate sensing from dosing. This node targets the DIY /
+   agriha case where the two are decoupled.
 
 ### `src_category` — なぜ `sensor` 固定ではないのか
 
